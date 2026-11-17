@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WinSW v2.12.0 service definition for the inheco-tec api (design C13, DD-5; FR-3.1).
+
+  Install (operator-gated, api/README.md "Windows service"): put the SHA-256-verified WinSW binary
+  next to this file as inheco-tec-api.exe, then run "inheco-tec-api.exe install". After install,
+  set the virtual account: sc.exe config inheco-tec-api obj= "NT SERVICE\inheco-tec-api".
+
+  No secret is in this file (NFR-1, Risk R13). The bearer token comes from the ACL-restricted
+  service.env named by service.env_file in the manifest (DD-6); the TLS key is named there by
+  file path only. Never add the token as an <env> element: local users can read this file and
+  the service registry key.
+
+  Import path (carry-forward T7-S4): the service runs the venv console script, so only the venv
+  (admin-writable only) is on sys.path. PYTHONSAFEPATH keeps the script directory and the working
+  directory off sys.path, PYTHONNOUSERSITE keeps user site-packages off it, and an empty
+  PYTHONPATH drops any machine-wide entry. The working directory is the venv root.
+
+  Stop budget (S7): WinSW sends Ctrl+C and waits up to 30 s. Uvicorn drains requests for at most
+  5 s, then the shutdown stop runs with service.shutdown_timeout_s (10 s); that deadline is soft
+  by up to one transaction in flight (about 15.8 s), so the common case ends well inside 30 s.
+-->
+<service>
+  <id>inheco-tec-api</id>
+  <name>Inheco TEC API</name>
+  <description>HTTPS REST API for the Inheco TEC controllers (USB HID). &lt;issue-id&gt;.</description>
+
+  <executable>C:\instrument-apis\inheco-tec\venv\Scripts\inheco-tec-api.exe</executable>
+  <workingdirectory>C:\instrument-apis\inheco-tec\venv</workingdirectory>
+
+  <!-- Paths and switches only; never a secret value. -->
+  <env name="INHECO_TEC_MANIFEST" value="C:\instrument-apis\inheco-tec\instrument.yaml"/>
+  <env name="PYTHONSAFEPATH" value="1"/>
+  <env name="PYTHONNOUSERSITE" value="1"/>
+  <env name="PYTHONPATH" value=""/>
+
+  <!-- Start at boot; restart after an abnormal exit (FR-3.1). -->
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+
+  <!-- Graceful stop: Ctrl+C first, so uvicorn runs the lifespan shutdown stop (FR-11.1, S7). -->
+  <stoptimeout>30 sec</stoptimeout>
+  <preshutdown>true</preshutdown>
+  <preshutdownTimeout>30 sec</preshutdownTimeout>
+
+  <logpath>C:\ProgramData\instrument-apis\inheco-tec\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

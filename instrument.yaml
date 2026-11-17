@@ -1,0 +1,52 @@
+# Executable manifest for the inheco-tec duo (design C2; FR-2).
+# The manifest owns executable facts (host/IP, port, protocol, auth, capabilities, method refs);
+# narrative knowledge lives in <knowledge-base-ref>, fleet/vendor identity in the <private-doc-ref> - cross-linked by
+# slug. It holds no secret value: the bearer token is referenced by env-var name, the TLS
+# certificate and key by file path (FR-2.4). Loaded and validated fail-closed by
+# inheco_tec_api.manifest.load_manifest (path override: env INHECO_TEC_MANIFEST).
+
+slug: inheco-tec
+title: Inheco TEC
+hosting: host-resident
+host: 192.0.2.10            # API host (instrument is USB-attached to it)
+port: 8743                   # API HTTPS port (OQ-7)
+protocol:
+  api: https-rest
+  instrument: usb-hid
+auth:
+  bearer_token_ref: INHECO_TEC_API_TOKEN     # env-var NAME, never a value  pragma: allowlist secret
+tls:
+  cert_file: C:/ProgramData/instrument-apis/inheco-tec/tls/server.crt
+  key_file:  C:/ProgramData/instrument-apis/inheco-tec/tls/server.key
+service:
+  bind: 0.0.0.0
+  env_file: C:/ProgramData/instrument-apis/inheco-tec/secrets/service.env   # optional, ACL-restricted
+  state_file: C:/ProgramData/instrument-apis/inheco-tec/state/state.json
+  shutdown_timeout_s: 10
+transport:
+  kind: hidapi               # hidapi | fake   (env INHECO_TEC_TRANSPORT overrides)
+  pre_send_delay_ms: 200     # >= 100; 0 allowed only when kind == fake
+  read_timeout_ms: 3000      # 500..10000
+  retry_delay_ms: 1000       # >= 1000; 0 allowed only when kind == fake
+  max_attempts: 3            # 1..11
+  max_stale_reads: 3         # 1..10, reads past non-matching replies per attempt
+  lock_wait_s: 16            # 1..120, see Risk R5
+article_numbers:             # keys MUST be quoted 7-digit strings
+  "7000179": {class: cpac,      variant: CPAC Microplate}
+  "7000190": {class: cpac,      variant: CPAC Ultraflat}
+  "7000193": {class: cpac,      variant: CPAC Ultraflat}
+  "7000163": {class: cpac-2tec, variant: CPAC Microplate HT 2TEC}
+  "7000166": {class: cpac-2tec, variant: CPAC Ultraflat HT 2TEC}
+  "7000165": {class: cpac-2tec, variant: CPAC Ultraflat HT 2TEC}
+controllers:
+  - id: 0
+    slots:
+      - {id: 1, class: cpac, min_c: 4.0, max_c: 70.0, at_target_tolerance_c: 1.0}
+      - {id: 2, class: cpac, min_c: 4.0, max_c: 70.0, at_target_tolerance_c: 1.0}
+capabilities: [status, connect, set-target, start, stop, stop-all, actual-temperature,
+               target-temperature, at-target, sensor-values, device-type, firmware-version,
+               release, reacquire, emergency-off]
+refs:
+  linear_issue: <issue-id>
+  vault: <knowledge-base-ref>
+  notion_hub: ""

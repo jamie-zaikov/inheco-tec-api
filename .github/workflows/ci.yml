@@ -1,0 +1,114 @@
+name: CI
+
+# Quality + security gates for inheco-tec-api.
+# Runs on every PR into main and on direct pushes to main. Configure branch
+# protection on `main` to require the jobs below before merging.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege default; no job widens it.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Python: lint · type-check · unit tests with the coverage gate ────────────
+  test:
+    name: python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # Every package, the tools included, is installed at the exact pin of constraints.txt.
+      - name: Install (editable, with dev extras, pinned)
+        id: install
+        run: python -m pip install -c constraints.txt -e ".[dev]"
+
+      - name: Lint (ruff)
+        id: ruff
+        run: ruff check .
+
+      # A hard gate: a mypy error fails the job.
+      - name: Type-check (mypy)
+        id: mypy
+        run: mypy src/inheco_tec_api
+
+      # The coverage floor of 90 % covers the listed modules.
+      - name: Unit tests with the coverage gate (pytest)
+        id: pytest
+        run: |
+          set -euo pipefail
+          cov_args=()
+          for module in inheco_tec_api.protocol inheco_tec_api.engine inheco_tec_api.limits; do cov_args+=("--cov=${module}"); done
+          pytest "${cov_args[@]}" --cov-report=term-missing --cov-fail-under=90
+
+  # ── Dependency vulnerability audit (pip-audit) ──────────────────────────────
+  dependency-audit:
+    name: dependency-audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project + pip-audit (pinned)
+        run: python -m pip install -c constraints.txt . pip-audit==2.9.0
+
+      # Fails on any known advisory in the resolved dependency tree.
+      - name: Audit
+        id: pip-audit
+        run: pip-audit --progress-spinner off
+
+  # ── Secret scanning across the working tree + history (gitleaks) ────────────
+  secret-scan:
+    name: secret-scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history so historical commits are scanned too
+
+      - name: Download gitleaks 8.21.2
+        id: gitleaks-download
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "${RUNNER_TEMP}/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz"
+
+      # The archive must match the pinned SHA-256 before it is unpacked or run.
+      - name: Verify the gitleaks SHA-256
+        id: gitleaks-verify
+        run: |
+          set -euo pipefail
+          echo "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba  ${RUNNER_TEMP}/gitleaks.tar.gz" | sha256sum --check --strict -
+          tar -xzf "${RUNNER_TEMP}/gitleaks.tar.gz" -C "${RUNNER_TEMP}" gitleaks
+
+      # Scan the checked-out tree; non-zero exit on any finding fails the job.
+      - name: Scan the working tree
+        id: gitleaks-dir
+        run: |
+          "${RUNNER_TEMP}/gitleaks" dir . --redact --no-banner --exit-code 1
+
+      # Also scan git history.
+      - name: Scan the git history
+        id: gitleaks-git
+        run: |
+          "${RUNNER_TEMP}/gitleaks" git . --redact --no-banner --exit-code 1

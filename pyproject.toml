@@ -1,0 +1,76 @@
+# inheco-tec-api: a host-resident FastAPI service that drives Inheco TEC controllers over USB HID.
+#
+# The shared service base (health, auth, config, logging, port, transport) ships inside this
+# distribution as the private sub-package inheco_tec_api._vendor.instrument_api_core. This file
+# declares version ranges; constraints.txt pins the exact versions that CI installs.
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inheco-tec-api"
+version = "0.1.0"
+description = "HTTPS REST API that drives Inheco TEC temperature controllers over USB HID."
+requires-python = ">=3.11"
+license = {text = "MIT"}
+readme = "README.md"
+dependencies = [
+  "fastapi>=0.115",
+  # Plain uvicorn, not [standard]: no extra native wheels on the host; TLS uses stdlib ssl.
+  "uvicorn>=0.32",
+  "structlog>=24.4",
+  "pydantic>=2.9",
+  "pyyaml>=6.0.2",
+  "python-dotenv>=1.0.1",
+  # cython-hidapi (imports `hid`); bundles the hidapi C library in its wheels. Not PyPI `hid`.
+  "hidapi>=0.14.0.post4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=6.0",
+  "httpx>=0.27",
+  "mypy>=1.14",
+  "ruff>=0.8",
+  "types-PyYAML>=6.0.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/jamie-zaikov/inheco-tec-api"
+Repository = "https://github.com/jamie-zaikov/inheco-tec-api"
+
+[project.scripts]
+inheco-tec-api = "inheco_tec_api.entry:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["inheco_tec_api*"]
+
+# The vendored Swagger UI files served by /docs (src/inheco_tec_api/docs_assets/README.md) and the
+# typing marker of the vendored service base.
+[tool.setuptools.package-data]
+inheco_tec_api = ["docs_assets/*"]
+"inheco_tec_api._vendor.instrument_api_core" = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# First-party modules are found from the repo root only, as in the source tree: a module of src/
+# is first-party inside its own package, and the tests import it as a third-party package. So the
+# copied files keep the import grouping of their source.
+src = ["."]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import sorting, pyupgrade, bugbear.
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
